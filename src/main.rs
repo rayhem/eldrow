@@ -28,6 +28,12 @@ fn main() {
         let mut guess = String::new();
         std::io::stdin().read_line(&mut guess).unwrap();
         guess = guess.trim().to_string();
+
+        if !words.contains(&guess) {
+            println!(">> Invalid guess <<");
+            continue;
+        }
+
         guesses.push(guess.clone());
         let mut tiles: Vec<_> = guess.chars().map(Tile::Unchecked).collect();
 
@@ -50,8 +56,6 @@ fn main() {
                 *tile = Tile::Unused(c);
             }
         }
-
-        dbg!(&tiles);
 
         for (i, tile) in tiles.iter().enumerate() {
             words.retain(|word| {
@@ -80,8 +84,8 @@ fn main() {
     }
 }
 
-fn input_digits(dialog: &str) -> Vec<usize> {
-    print!("{}", dialog);
+fn input_digits(msg: &str) -> Vec<usize> {
+    print!("{}", msg);
     std::io::stdout().flush().unwrap();
     let mut digits = String::new();
     std::io::stdin().read_line(&mut digits).unwrap();
