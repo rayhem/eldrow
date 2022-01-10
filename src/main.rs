@@ -4,28 +4,45 @@ use std::str::FromStr;
 
 #[derive(Clone, Debug)]
 enum Command {
-    Guess(String),
-    Prune(char, usize),
-    PruneAll(char),
+    Fix(char, usize),
+    Guess(String, Vec<usize>, Vec<usize>),
+    Prune(String),
+    PruneAt(char, usize),
 }
 
 impl FromStr for Command {
     type Err = Box<dyn std::error::Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (cmd, args) = s.split_once(' ').unwrap();
+        let (cmd, args) = s.split_once(' ').ok_or("Invalid command")?;
         match cmd {
-            "guess" | "g" => Ok(Command::Guess(args.to_string())),
-            "prune" | "p" => {
+            "guess" | "g" => {
+                let to_vec =
+                    |s: &str| Vec::from_iter(s.chars().map(|c| c.to_digit(10).unwrap() as usize));
+
+                let (word, indices) = args.split_once(' ').unwrap();
+                let (correct, incorrect) = dbg!(indices).trim().split_once(',').unwrap();
+                Ok(Command::Guess(
+                    word.to_string(),
+                    to_vec(correct),
+                    to_vec(incorrect),
+                ))
+            }
+            "fix" | "f" => {
                 let (ch, idx) = args.split_once(' ').unwrap();
-                Ok(Command::Prune(
+                Ok(Command::Fix(
                     ch.chars().next().ok_or("Invalid character argument")?,
                     idx.trim().parse()?,
                 ))
             }
-            "pruneAll" | "pa" => Ok(Command::PruneAll(
-                args.chars().next().ok_or("Invalid character argument")?,
-            )),
+            "pruneAt" | "pa" => {
+                let (ch, idx) = args.split_once(' ').unwrap();
+                Ok(Command::PruneAt(
+                    ch.chars().next().ok_or("Invalid character argument")?,
+                    idx.trim().parse()?,
+                ))
+            }
+            "prune" | "p" => Ok(Command::Prune(args.trim().to_string())),
             _ => Err("Invalid command".into()),
         }
     }
@@ -64,31 +81,30 @@ fn main() {
         }
 
         match command.unwrap() {
-            Command::PruneAll(ch) => {
-                words.retain(|word| !word.contains(ch));
+            Command::Prune(chars) => {
+                chars.chars().for_each(|ch| prune(&mut words, ch));
             }
-            Command::Prune(ch, idx) => {
-                words.retain(|word| word.chars().nth(idx).unwrap() != ch);
+            Command::Fix(ch, idx) => {
+                fix(&mut words, ch, idx);
             }
-            Command::Guess(arg) => {
+            Command::PruneAt(ch, idx) => {
+                fix(&mut words, ch, idx);
+            }
+            Command::Guess(arg, correct_indices, incorrect_indices) => {
                 let guess = arg.trim().to_string();
 
                 guesses.push(guess.clone());
                 let mut tiles: Vec<_> = guess.chars().map(Tile::Unchecked).collect();
 
-                input_digits("  Correct placement: ")
-                    .into_iter()
-                    .for_each(|i| match tiles[i] {
-                        Tile::Unchecked(c) => tiles[i] = Tile::Correct(c),
-                        _ => unreachable!(),
-                    });
+                correct_indices.into_iter().for_each(|i| match tiles[i] {
+                    Tile::Unchecked(c) => tiles[i] = Tile::Correct(c),
+                    _ => unreachable!(),
+                });
 
-                input_digits("Incorrect placement: ")
-                    .into_iter()
-                    .for_each(|i| match tiles[i] {
-                        Tile::Unchecked(c) => tiles[i] = Tile::Incorrect(c),
-                        _ => unreachable!(),
-                    });
+                incorrect_indices.into_iter().for_each(|i| match tiles[i] {
+                    Tile::Unchecked(c) => tiles[i] = Tile::Incorrect(c),
+                    _ => unreachable!(),
+                });
 
                 for tile in tiles.iter_mut() {
                     if let Tile::Unchecked(c) = *tile {
@@ -108,25 +124,15 @@ fn main() {
                 }
 
                 for (i, tile) in tiles.iter().enumerate() {
-                    words.retain(|word| {
-                        let letter = word.chars().nth(i).unwrap();
-                        match *tile {
-                            Tile::Correct(c) => letter == c,
-                            Tile::Incorrect(c) => tiles
-                                .iter()
-                                .zip(word.chars())
-                                .filter_map(|(&tile, char)| -> Option<bool> {
-                                    match tile {
-                                        Tile::Unused(_) => Some(c == char),
-                                        Tile::Incorrect(d) => Some(c != d && c == char),
-                                        _ => None,
-                                    }
-                                })
-                                .any(|b| b),
-                            Tile::Unused(c) => letter != c,
-                            Tile::Unchecked(_) => unreachable!(),
+                    match *tile {
+                        Tile::Correct(c) => fix(&mut words, c, i),
+                        Tile::Incorrect(c) => {
+                            prune_at(&mut words, c, i);
+                            require(&mut words, c);
                         }
-                    });
+                        Tile::Unused(c) => prune_at(&mut words, c, i),
+                        Tile::Unchecked(_) => unreachable!(),
+                    }
                 }
             }
         }
@@ -142,6 +148,22 @@ fn main() {
                 .unwrap()
         );
     }
+}
+
+fn prune(words: &mut HashSet<String>, ch: char) {
+    words.retain(|word| !word.contains(ch));
+}
+
+fn prune_at(words: &mut HashSet<String>, ch: char, idx: usize) {
+    words.retain(|word| word.chars().nth(idx).unwrap() != ch);
+}
+
+fn fix(words: &mut HashSet<String>, ch: char, idx: usize) {
+    words.retain(|word| word.chars().nth(idx).unwrap() == ch);
+}
+
+fn require(words: &mut HashSet<String>, ch: char) {
+    words.retain(|word| word.contains(ch));
 }
 
 fn input_digits(msg: &str) -> Vec<usize> {
