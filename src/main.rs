@@ -12,42 +12,60 @@ enum Command {
     RequireAt(char, usize),
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CommandError {
+    ImproperArgumentCount,
+    MalformedArgument,
+    InvalidCommand,
+}
+
 impl FromStr for Command {
-    type Err = Box<dyn std::error::Error>;
+    type Err = CommandError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (cmd, args) = s.split_once(' ').ok_or("Invalid command")?;
+        use CommandError::*;
+
+        let (cmd, args) = s.trim().split_once(' ').ok_or(ImproperArgumentCount)?;
         match cmd {
             "contains" => Ok(Command::Contains(args.to_string())),
             "guess" | "g" => {
                 let to_vec =
                     |s: &str| Vec::from_iter(s.chars().map(|c| c.to_digit(10).unwrap() as usize));
 
-                let (word, indices) = args.split_once(' ').unwrap();
-                let (correct, incorrect) = indices.trim().split_once(',').unwrap();
+                let (word, indices) = args.split_once(' ').ok_or(ImproperArgumentCount)?;
+                let (correct, incorrect) =
+                    indices.trim().split_once(',').ok_or(MalformedArgument)?;
                 Ok(Command::Guess(
                     word.to_string(),
                     to_vec(correct),
                     to_vec(incorrect),
                 ))
             }
-            "prune" | "p" => Ok(Command::Prune(args.trim().to_string())),
-            "pruneAt" | "pa" => {
-                let (ch, idx) = args.split_once(' ').unwrap();
-                Ok(Command::PruneAt(
-                    ch.chars().next().ok_or("Invalid character argument")?,
-                    idx.trim().parse()?,
-                ))
+            "prune" | "p" => {
+                let mut tokens = args.split(" at ");
+                let chars = tokens.next().ok_or(ImproperArgumentCount)?;
+                if let Some(location) = tokens.next() {
+                    Ok(Command::PruneAt(
+                        chars.chars().next().ok_or(ImproperArgumentCount)?,
+                        location.parse().map_err(|_| MalformedArgument)?,
+                    ))
+                } else {
+                    Ok(Command::Prune(chars.to_string()))
+                }
             }
-            "require" | "r" => Ok(Command::Require(args.trim().to_string())),
-            "requireAt" | "ra" => {
-                let (ch, idx) = args.split_once(' ').unwrap();
-                Ok(Command::RequireAt(
-                    ch.chars().next().ok_or("Invalid character argument")?,
-                    idx.trim().parse()?,
-                ))
+            "require" | "r" => {
+                let mut tokens = args.split(" at ");
+                let chars = tokens.next().ok_or(ImproperArgumentCount)?;
+                if let Some(location) = tokens.next() {
+                    Ok(Command::RequireAt(
+                        chars.chars().next().ok_or(ImproperArgumentCount)?,
+                        location.parse().map_err(|_| MalformedArgument)?,
+                    ))
+                } else {
+                    Ok(Command::Require(chars.to_string()))
+                }
             }
-            _ => Err("Invalid command".into()),
+            _ => Err(InvalidCommand),
         }
     }
 }
@@ -69,6 +87,8 @@ fn main() {
         .map(|word| word.trim().to_ascii_lowercase())
         .collect();
 
+    println!("Wordlist contains {} words", words.len());
+
     let mut guesses: Vec<String> = Vec::new();
 
     while words.len() > 1 {
@@ -81,6 +101,7 @@ fn main() {
         let command = Command::from_str(&command_string);
 
         if command.is_err() {
+            println!("Invalid command (reason: {:?})", command.unwrap_err());
             continue;
         }
 
