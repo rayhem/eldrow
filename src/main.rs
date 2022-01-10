@@ -4,10 +4,12 @@ use std::str::FromStr;
 
 #[derive(Clone, Debug)]
 enum Command {
-    Fix(char, usize),
+    Contains(String),
     Guess(String, Vec<usize>, Vec<usize>),
     Prune(String),
     PruneAt(char, usize),
+    Require(String),
+    RequireAt(char, usize),
 }
 
 impl FromStr for Command {
@@ -16,25 +18,20 @@ impl FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (cmd, args) = s.split_once(' ').ok_or("Invalid command")?;
         match cmd {
+            "contains" => Ok(Command::Contains(args.to_string())),
             "guess" | "g" => {
                 let to_vec =
                     |s: &str| Vec::from_iter(s.chars().map(|c| c.to_digit(10).unwrap() as usize));
 
                 let (word, indices) = args.split_once(' ').unwrap();
-                let (correct, incorrect) = dbg!(indices).trim().split_once(',').unwrap();
+                let (correct, incorrect) = indices.trim().split_once(',').unwrap();
                 Ok(Command::Guess(
                     word.to_string(),
                     to_vec(correct),
                     to_vec(incorrect),
                 ))
             }
-            "fix" | "f" => {
-                let (ch, idx) = args.split_once(' ').unwrap();
-                Ok(Command::Fix(
-                    ch.chars().next().ok_or("Invalid character argument")?,
-                    idx.trim().parse()?,
-                ))
-            }
+            "prune" | "p" => Ok(Command::Prune(args.trim().to_string())),
             "pruneAt" | "pa" => {
                 let (ch, idx) = args.split_once(' ').unwrap();
                 Ok(Command::PruneAt(
@@ -42,7 +39,14 @@ impl FromStr for Command {
                     idx.trim().parse()?,
                 ))
             }
-            "prune" | "p" => Ok(Command::Prune(args.trim().to_string())),
+            "require" | "r" => Ok(Command::Require(args.trim().to_string())),
+            "requireAt" | "ra" => {
+                let (ch, idx) = args.split_once(' ').unwrap();
+                Ok(Command::RequireAt(
+                    ch.chars().next().ok_or("Invalid character argument")?,
+                    idx.trim().parse()?,
+                ))
+            }
             _ => Err("Invalid command".into()),
         }
     }
@@ -76,19 +80,26 @@ fn main() {
         std::io::stdin().read_line(&mut command_string).unwrap();
         let command = Command::from_str(&command_string);
 
-        if let Err(_) = command {
+        if command.is_err() {
             continue;
         }
 
         match command.unwrap() {
+            Command::Contains(word) => {
+                println!("{}", words.contains(&word));
+                continue;
+            }
             Command::Prune(chars) => {
                 chars.chars().for_each(|ch| prune(&mut words, ch));
             }
-            Command::Fix(ch, idx) => {
-                fix(&mut words, ch, idx);
-            }
             Command::PruneAt(ch, idx) => {
-                fix(&mut words, ch, idx);
+                prune_at(&mut words, ch, idx);
+            }
+            Command::Require(chars) => {
+                chars.chars().for_each(|ch| require(&mut words, ch));
+            }
+            Command::RequireAt(ch, idx) => {
+                require_at(&mut words, ch, idx);
             }
             Command::Guess(arg, correct_indices, incorrect_indices) => {
                 let guess = arg.trim().to_string();
@@ -112,20 +123,29 @@ fn main() {
                     }
                 }
 
-                if tiles.iter().all(|t| matches!(t, Tile::Unused(_))) {
-                    words.retain(|word| {
-                        !tiles.iter().any(|t| -> bool {
-                            match t {
-                                Tile::Unused(c) => word.contains(*c),
-                                _ => false,
-                            }
-                        })
+                let marked_tiles: Vec<char> = tiles
+                    .iter()
+                    .filter_map(|tile| match tile {
+                        Tile::Correct(c) => Some(*c),
+                        Tile::Incorrect(c) => Some(*c),
+                        _ => None,
                     })
+                    .collect();
+
+                for char in tiles.iter().filter_map(|tile| match tile {
+                    Tile::Unused(c) => Some(c),
+                    _ => None,
+                }) {
+                    if tiles.iter().all(|t| matches!(t, Tile::Unused(_)))
+                        || !marked_tiles.contains(char)
+                    {
+                        prune(&mut words, *char);
+                    }
                 }
 
                 for (i, tile) in tiles.iter().enumerate() {
                     match *tile {
-                        Tile::Correct(c) => fix(&mut words, c, i),
+                        Tile::Correct(c) => require_at(&mut words, c, i),
                         Tile::Incorrect(c) => {
                             prune_at(&mut words, c, i);
                             require(&mut words, c);
@@ -145,7 +165,7 @@ fn main() {
             words
                 .iter()
                 .max_by(|a, b| score(a, &letter_counts).cmp(&score(b, &letter_counts)))
-                .unwrap()
+                .unwrap_or_else(|| panic!("Empty wordlist"))
         );
     }
 }
@@ -158,24 +178,12 @@ fn prune_at(words: &mut HashSet<String>, ch: char, idx: usize) {
     words.retain(|word| word.chars().nth(idx).unwrap() != ch);
 }
 
-fn fix(words: &mut HashSet<String>, ch: char, idx: usize) {
-    words.retain(|word| word.chars().nth(idx).unwrap() == ch);
-}
-
 fn require(words: &mut HashSet<String>, ch: char) {
     words.retain(|word| word.contains(ch));
 }
 
-fn input_digits(msg: &str) -> Vec<usize> {
-    print!("{}", msg);
-    std::io::stdout().flush().unwrap();
-    let mut digits = String::new();
-    std::io::stdin().read_line(&mut digits).unwrap();
-    digits
-        .trim()
-        .chars()
-        .map(|ch| ch.to_digit(10).unwrap() as usize)
-        .collect()
+fn require_at(words: &mut HashSet<String>, ch: char, idx: usize) {
+    words.retain(|word| word.chars().nth(idx).unwrap() == ch);
 }
 
 fn letter_counts(words: &HashSet<String>) -> HashMap<char, i32> {
