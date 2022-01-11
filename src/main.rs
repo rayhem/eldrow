@@ -157,9 +157,7 @@ fn main() {
                     Tile::Unused(c) => Some(c),
                     _ => None,
                 }) {
-                    if tiles.iter().all(|t| matches!(t, Tile::Unused(_)))
-                        || !marked_tiles.contains(char)
-                    {
+                    if marked_tiles.len() == 0 || !marked_tiles.contains(char) {
                         prune(&mut words, *char);
                     }
                 }
@@ -181,12 +179,14 @@ fn main() {
         println!("{:?}", words);
         println!("{}", words.len());
         let letter_counts = letter_counts(&words);
+        let recommendation = words
+            .iter()
+            .max_by(|a, b| score(a, &letter_counts).cmp(&score(b, &letter_counts)))
+            .unwrap_or_else(|| panic!("Empty wordlist"));
         println!(
-            "Recommended guess: {}",
-            words
-                .iter()
-                .max_by(|a, b| score(a, &letter_counts).cmp(&score(b, &letter_counts)))
-                .unwrap_or_else(|| panic!("Empty wordlist"))
+            "Recommended guess: {} ({})",
+            recommendation,
+            (score(recommendation, &letter_counts) as f64) / (words.len() as f64)
         );
     }
 }
