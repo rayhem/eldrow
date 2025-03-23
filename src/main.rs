@@ -1,6 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::str::FromStr;
+use clap::Parser;
+
+#[derive(Clone, Debug, Parser)]
+struct Args {
+    #[arg(short, long)]
+    wordlist: std::path::PathBuf,
+
+    #[arg(short, long, default_value_t = 5)]
+    length: usize
+}
 
 #[derive(Clone, Debug)]
 enum Command {
@@ -79,11 +89,12 @@ enum Tile {
 }
 
 fn main() {
-    const WORD_LENGTH: usize = 5;
-    let mut words: HashSet<_> = std::fs::read_to_string("/usr/share/dict/american-english-small")
-        .expect("Could not open dictionary file")
+    let args = Args::parse();
+    
+    let mut words: HashSet<_> = std::fs::read_to_string(args.wordlist)
+        .expect("Could not open wordlist")
         .lines()
-        .filter(|word| word.is_ascii() && word.len() == WORD_LENGTH)
+        .filter(|word| word.chars().count() == args.length)
         .map(|word| word.trim().to_ascii_lowercase())
         .collect();
 
